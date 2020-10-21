@@ -23,10 +23,6 @@ const DEFAULT_ADAPTERS = {
   canlib: { str: "canlib", priority: undefined }
 };
 
-// TODO: Should non-applicable acceptance filter options fail silently?
-// Make that an option for the user?
-
-
 // Module
 module.exports = class csCanbus extends Duplex {
   constructor(options) {
@@ -150,11 +146,11 @@ module.exports = class csCanbus extends Duplex {
     return new Promise(function(resolve) {
       // Attempt to open a given port using its corresponding module's open()
       // method
-      console.log("Attempting to open port " + p + "...");
+      console.debug("Attempting to open port " + p + "...");
       let module = me._lookupModule(ports[p]);
       module.open(ports[p].path)
         .then(() => {
-          console.log("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
+          console.debug("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
           // If successful, save the module (already assigned) and port for posterity
           me.selectedPort = ports[p];
           me.selectedModule = module;
