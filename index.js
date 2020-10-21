@@ -66,14 +66,24 @@ module.exports = class csCanbus extends Duplex {
 
     return new Promise(function(resolve) {
       // Enumerate adapters for each CAN adapter type, in order of priority
-      var adapters = [];
-      adapters.splice(me.adapters.canusbcom.priority, 0, me.canUsbCom.list());
-      adapters.splice(me.adapters.pcanusb.priority, 0, me.pcanUsb.list());
-      adapters.splice(me.adapters.canlib.priority, 0, me.canlib.list());
-
+      var adapter_list = [];
+      for (const p in me.options.priority) {
+        switch (me.options.priority[p]) {
+        case me.adapters.canusbcom.str:
+          adapter_list.push(me.canUsbCom.list());
+          break;
+        case me.adapters.pcanusb.str:
+          adapter_list.push(me.pcanUsb.list());
+          break;
+        case me.adapters.canlib.str:
+          adapter_list.push(me.canlib.list());
+          break;
+        }
+      }
+      
       // Generate list of all available ports, across all modules and
       // preserving order
-      Promise.all(adapters)
+      Promise.all(adapter_list)
         .then((ports) => {
           // Identify each adapter's type by adding a type element to the port list
           ports[me.adapters.canusbcom.priority].forEach(elem => { elem['type'] = me.adapters.canusbcom.str; });
