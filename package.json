@@ -5,10 +5,12 @@
   "main": "index.js",
   "license": "MIT",
   "author": "cwalden@controls.com",
-  "dependencies": {
-    "@csllc/cs-pcan-usb": "^0.1.0",
+  "optionalDependencies": {
     "@csllc/cs-canlib": "^0.1.0",
-    "can-usb-com": "^4.0.0",
+    "@csllc/cs-pcan-usb": "^0.1.1",
+    "can-usb-com": "^4.0.0"
+  },
+  "dependencies": {
     "eslint": "^7.10.0"
   },
   "devDependencies": {
