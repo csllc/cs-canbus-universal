@@ -1,19 +1,54 @@
 'use strict';
 
-const CANUSBCOM = require('can-usb-com');
-const PCANUSB = require('@csllc/cs-pcan-usb');
-const CANlib = require('@csllc/cs-canlib');
-
 const { Duplex } = require('stream');
 
+// Selectively include modules depending on platform
+var CANUSBCOM = undefined;
+var PCANUSB = undefined;
+var CANLIB = undefined;
+
+if ((process.platform == "win32") ||
+    (process.platform == "darwin")) {
+  PCANUSB = require('@csllc/cs-pcan-usb');
+  CANUSBCOM = require('can-usb-com');
+}
+
+if (process.platform == "win32") {
+  CANLIB = require('@csllc/cs-canlib');
+}
+
 // Default configuration used unless overridden by caller
-const DEFAULT_OPTIONS = {
-  canRate: 250000,
-  filters: [],
-  loopback: false,
-  // Default priority of adapters, highest (left) to lowest (right)
-  priority: [ 'can-usb-com', 'pcan-usb', 'canlib' ],
-};
+
+
+var DEFAULT_OPTIONS;
+
+// Default priority of adapters, highest (left) to lowest (right)
+switch (process.platform) {
+case "win32":
+  DEFAULT_OPTIONS = {
+    canRate: 250000,
+    filters: [],
+    loopback: false,
+    priority: [ 'can-usb-com', 'pcan-usb', 'canlib' ]
+  };
+  break;
+case "darwin":
+  DEFAULT_OPTIONS = {
+    canRate: 250000,
+    filters: [],
+    loopback: false,
+    priority: [ 'pcan-usb', 'can-usb-com' ]
+  };
+  break;
+default:
+  DEFAULT_OPTIONS = {
+    canRate: 250000,
+    filters: [],
+    loopback: false,
+    priority: [ 'can-usb-com' ]
+  };
+  break;
+} 
 
 // Default adapter list; priorities are assigned in constructor
 // If another adapter type is added, be sure to update this
@@ -31,9 +66,15 @@ module.exports = class csCanbus extends Duplex {
     this.setOptions(options);
     this.setAdapters(this.options.priority);
 
-    this.canUsbCom = new CANUSBCOM(this.options); // GridConnect CAN-USB-COM
-    this.pcanUsb = new PCANUSB(this.options); // PEAK-System PCAN-USB
-    this.canlib = new CANlib(this.options); // Kvaser CANlib
+    if (CANUSBCOM) {
+      this.canUsbCom = new CANUSBCOM(this.options); // GridConnect CAN-USB-COM
+    }
+    if (PCANUSB) {
+      this.pcanUsb = new PCANUSB(this.options); // PEAK-System PCAN-USB
+    }
+    if (CANLIB) {
+      this.canlib = new CANLIB(this.options); // Kvaser CANlib
+    }
 
     this.ports = undefined; // List of all available ports across all modules
     this.selectedModule = undefined; // First module to provide a successfully opened port
@@ -86,9 +127,21 @@ module.exports = class csCanbus extends Duplex {
       Promise.all(adapter_list)
         .then((ports) => {
           // Identify each adapter's type by adding a type element to the port list
-          ports[me.adapters.canusbcom.priority].forEach(elem => { elem['type'] = me.adapters.canusbcom.str; });
-          ports[me.adapters.pcanusb.priority].forEach(elem => { elem['type'] = me.adapters.pcanusb.str; });
-          ports[me.adapters.canlib.priority].forEach(elem => { elem['type'] = me.adapters.canlib.str; });
+          if (CANUSBCOM) {
+            ports[me.adapters.canusbcom.priority].forEach((elem) => {
+              elem['type'] = me.adapters.canusbcom.str;
+            });
+          }
+          if (PCANUSB) {
+            ports[me.adapters.pcanusb.priority].forEach((elem) => {
+              elem['type'] = me.adapters.pcanusb.str;
+            });
+          }
+          if (CANLIB) {
+            ports[me.adapters.canlib.priority].forEach((elem) => {
+              elem['type'] = me.adapters.canlib.str;
+            });
+          }
           // Concatenate nested arrays returned by the promises
           ports = [].concat.apply([], ports);
           me.ports = ports;
