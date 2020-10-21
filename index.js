@@ -100,7 +100,7 @@ module.exports = class csCanbus extends Duplex {
   open(ports) {
     var me = this;
 
-    return new Promise(function(resolve) {
+    return new Promise(function(resolve, reject) {
       // Sequentially and recursively try to open each port by executing the
       // module-specific open promise on each of the members of the ports array.
       //
@@ -113,8 +113,8 @@ module.exports = class csCanbus extends Duplex {
           resolve();
         })
         .catch((err) => {
-        // An error is only thrown by me._tryOpenPorts if none of the ports
-        // are able to be opened.
+          // An error is only thrown by me._tryOpenPorts if none of the ports
+          // are able to be opened.
           reject(err);
         });
     });
@@ -153,7 +153,7 @@ module.exports = class csCanbus extends Duplex {
   _tryOpenPorts(ports, p) {
     var me = this;
 
-    return new Promise(function(resolve) {
+    return new Promise(function(resolve, reject) {
       // Attempt to open a given port using its corresponding module's open()
       // method
       console.debug("Attempting to open port " + p + "...");
@@ -179,7 +179,7 @@ module.exports = class csCanbus extends Duplex {
             // Recursively try the next port in the ports array
             resolve(me._tryOpenPorts(ports, p));
           } else {
-            throw new Error("Unable to open any of " + p + " available CAN ports.");
+            reject("Unable to open any of " + p + " available CAN ports.");
           }
         });
     });
