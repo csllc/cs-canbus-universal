@@ -11,8 +11,8 @@ const DEFAULT_OPTIONS = {
   canRate: 250000,
   filters: [],
   loopback: false,
-  // Priority of adapters, highest (left) to lowest (right)
-  priorities: [ 'pcan-usb', 'can-usb-com', 'canlib' ],
+  // Default priority of adapters, highest (left) to lowest (right)
+  priorities: [ 'can-usb-com', 'pcan-usb', 'canlib' ],
 };
 
 // Default adapter list; priorities are assigned in constructor
