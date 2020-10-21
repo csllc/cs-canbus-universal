@@ -1,7 +1,7 @@
 {
-  "name": "@csllc/cs-canbus",
+  "name": "@csllc/cs-canbus-universal",
   "version": "0.1.0",
-  "description": "CAN Bus wrapper module for NodeJS",
+  "description": "Universal CAN Bus module for NodeJS",
   "main": "index.js",
   "license": "MIT",
   "author": "cwalden@controls.com",
