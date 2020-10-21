@@ -12,7 +12,7 @@ const DEFAULT_OPTIONS = {
   filters: [],
   loopback: false,
   // Default priority of adapters, highest (left) to lowest (right)
-  priorities: [ 'can-usb-com', 'pcan-usb', 'canlib' ],
+  priority: [ 'can-usb-com', 'pcan-usb', 'canlib' ],
 };
 
 // Default adapter list; priorities are assigned in constructor
@@ -29,7 +29,7 @@ module.exports = class csCanbus extends Duplex {
     super({ objectMode: true });
 
     this.setOptions(options);
-    this.setAdapters(this.options.priorities);
+    this.setAdapters(this.options.priority);
 
     this.canUsbCom = new CANUSBCOM(this.options); // GridConnect CAN-USB-COM
     this.pcanUsb = new PCANUSB(this.options); // PEAK-System PCAN-USB
@@ -46,18 +46,18 @@ module.exports = class csCanbus extends Duplex {
     this.options = Object.assign(DEFAULT_OPTIONS, options);
   }
 
-  setAdapters(priorities) {
+  setAdapters(priority) {
     this.adapters = DEFAULT_ADAPTERS;
     // Check that all strings in the priorities array are valid
-    for (const p in priorities) {
-      if (JSON.stringify(this.adapters).indexOf(priorities[p]) == -1) {
-        throw new Error("Unknown adapter in priority list: " + priorities[p]);
+    for (const p in priority) {
+      if (JSON.stringify(this.adapters).indexOf(priority[p]) == -1) {
+        throw new Error("Unknown adapter in priority list: " + priority[p]);
       }
     }
     // Based on indicies of the strings in this.options.priorities, set priorities
     // for adapters
     for (const a in this.adapters) {
-      this.adapters[a].priority = priorities.indexOf(this.adapters[a].str);
+      this.adapters[a].priority = priority.indexOf(this.adapters[a].str);
     }
   }
 
