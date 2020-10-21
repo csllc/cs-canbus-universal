@@ -64,7 +64,12 @@ can.on('close', () => { console.log('close'); });
 
 
 setInterval( function() {
-  can.write( { id: 100,
-               ext: true,
-               buf: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]) });
+  if (can.isOpen()) {
+    can.write( { id: 100,
+                 ext: true,
+                 buf: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]) });
+  } else {
+    console.log("Waiting for CAN port to open");
+  }
 }, 1500);
+
