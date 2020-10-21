@@ -11,21 +11,20 @@ const DEFAULT_OPTIONS = {
   canRate: 250000,
   filters: [],
   loopback: false,
+  // Priority of adapters, highest (left) to lowest (right)
+  priorities: [ 'can-usb-com', 'canlib', 'pcan-usb' ],
 };
 
-// Indices for managing resolved promises
+// Default adapter list; priorities are assigned in constructor
 // If another adapter type is added, be sure to update this
-// TODO: Can this be done as an enum-like thing instead?
-const canusbcom = 0;
-const pcanusb = 1;
-const canlib = 2;
+const DEFAULT_ADAPTERS = {
+  canusbcom: { str: "can-usb-com", priority: undefined },
+  pcanusb: { str: "pcan-usb", priority: undefined },
+  canlib: { str: "canlib", priority: undefined }
+};
 
-// Establish priority of adapters, if more than one present on system
-// TODO: Use a config file for this
-const adapterPriorities = [ 'can-usb-com', 'pcan-usb', 'canlib' ];
-
-// TODO: Should non-applicable filter options fail silently? Make that an option
-// for the user?
+// TODO: Should non-applicable acceptance filter options fail silently?
+// Make that an option for the user?
 
 
 // Module
@@ -34,17 +33,15 @@ module.exports = class csCanbus extends Duplex {
     super({ objectMode: true });
 
     this.setOptions(options);
+    this.setAdapters(this.options.priorities);
 
     this.canUsbCom = new CANUSBCOM(this.options); // GridConnect CAN-USB-COM
     this.pcanUsb = new PCANUSB(this.options); // PEAK-System PCAN-USB
     this.canlib = new CANlib(this.options); // Kvaser CANlib
 
-    this.ports = undefined;
-    this.selectedModule = undefined;
-    this.selectedPort = undefined;
-
-    // TODO: Provide adapter priority list through constructor?
-
+    this.ports = undefined; // List of all available ports across all modules
+    this.selectedModule = undefined; // First module to provide a successfully opened port
+    this.selectedPort = undefined; // First port to be successfully opened
   }
 
   // Sets (or re-sets) the configuration options
@@ -53,24 +50,40 @@ module.exports = class csCanbus extends Duplex {
     this.options = Object.assign(DEFAULT_OPTIONS, options);
   }
 
+  setAdapters(priorities) {
+    this.adapters = DEFAULT_ADAPTERS;
+    // Check that all strings in the priorities array are valid
+    for (const p in priorities) {
+      if (JSON.stringify(this.adapters).indexOf(priorities[p]) == -1) {
+        throw new Error("Unknown adapter in priority list: " + priorities[p]);
+      }
+    }
+    // Based on indicies of the strings in this.options.priorities, set priorities
+    // for adapters
+    for (const a in this.adapters) {
+      this.adapters[a].priority = priorities.indexOf(this.adapters[a].str);
+    }
+  }
+
   list() {
     var me = this;
 
     return new Promise(function(resolve) {
-      // Enumerate adapters for each CAN adapter type, using predefined
-      // indices
+      // Enumerate adapters for each CAN adapter type, in order of priority
       var adapters = [];
-      adapters.splice(canusbcom, 0, me.canUsbCom.list());
-      adapters.splice(pcanusb, 0, me.pcanUsb.list());
-      adapters.splice(canlib, 0, me.canlib.list());
+      adapters.splice(me.adapters.canusbcom.priority, 0, me.canUsbCom.list());
+      adapters.splice(me.adapters.pcanusb.priority, 0, me.pcanUsb.list());
+      adapters.splice(me.adapters.canlib.priority, 0, me.canlib.list());
 
-    Promise.all(adapters)
+      // Generate list of all available ports, across all modules and
+      // preserving order
+      Promise.all(adapters)
         .then((ports) => {
-          // Identify each adapter's type by adding an element to the port list
-          ports[canusbcom].forEach(elem => { elem['type'] = 'can-usb-com'; });
-          ports[pcanusb].forEach(elem => { elem['type'] = 'pcan-usb'; });
-          ports[canlib].forEach(elem => { elem['type'] = 'canlib'; });
-          // Concatenate nested arrays returned by promises
+          // Identify each adapter's type by adding a type element to the port list
+          ports[me.adapters.canusbcom.priority].forEach(elem => { elem['type'] = me.adapters.canusbcom.str; });
+          ports[me.adapters.pcanusb.priority].forEach(elem => { elem['type'] = me.adapters.pcanusb.str; });
+          ports[me.adapters.canlib.priority].forEach(elem => { elem['type'] = me.adapters.canlib.str; });
+          // Concatenate nested arrays returned by the promises
           ports = [].concat.apply([], ports);
           me.ports = ports;
           resolve(ports);
@@ -82,16 +95,17 @@ module.exports = class csCanbus extends Duplex {
     var me = this;
 
     return new Promise(function(resolve) {
-
-
-      // Sequentially and recursively try to open each port by executing a
-      // promise on each of the members of the ports array
-
-      // Return on the first successful attempt to open a port
+      // Sequentially and recursively try to open each port by executing the
+      // module-specific open promise on each of the members of the ports array.
+      //
+      // Since ports is arranged in order of priority, this will return on the
+      // first successful attempt to open a port.
+      //
+      // Upon success, event handlers are set up by _tryOpenPorts as well.
       try {
-        me._tryOpenPort(ports, 0);
+        me._tryOpenPorts(ports, 0);
       } catch (err) {
-        // An error is only thrown by me._tryOpenPort if none of the ports
+        // An error is only thrown by me._tryOpenPorts if none of the ports
         // are able to be opened.
         reject(err);
       }
@@ -101,7 +115,6 @@ module.exports = class csCanbus extends Duplex {
   close() {
     // Emit close event on behalf of the module we're wrapping
     this.emit('close');
-    // TODO: try binding instead?
     return this.selectedModule.close();
   }
 
@@ -129,23 +142,30 @@ module.exports = class csCanbus extends Duplex {
   
   _write() {}
 
-  _tryOpenPort(ports, p) {
+  _tryOpenPorts(ports, p) {
     var me = this;
     // Attempt to open a given port using its corresponding module's open()
     // method
     console.log("Attempting to open port " + p + "...");
     me.selectedModule = me._lookupModule(ports[p]);
-    me.selectedModule.open(ports[p].path);
+    me.selectedModule.open(ports[p].path)
       .then(() => {
         console.log("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
         // If successful, save the module (already assigned) and port for posterity
         me.selectedPort = ports[p];
+        // Event passthrough
+        me.selectedModule.on('error', (err) => { me.emit('error', err); });
+        me.selectedModule.on('data', (msg) => { me.push(msg); });
+        me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
+        // Emit open event on behalf of the module we're wrapping
+        me.emit('open');
       })
       .catch((err) => {
         console.error("Unable to open port " + p + " (" + ports[p].path + ") using " + ports[p].type + ": " + err);
         p++;
         if (p < ports.length) {
-          me._tryOpenPort(ports, p);
+          // Recursively try the next port in the ports array
+          me._tryOpenPorts(ports, p);
         } else {
           throw new Error("Unable to open any of " + p + " available CAN ports.");
         }
@@ -156,14 +176,13 @@ module.exports = class csCanbus extends Duplex {
     var me = this;
     
     switch(port.type) {
-    case "can-usb-com":
+    case me.adapters.canusbcom.str:
       return me.canUsbCom;
-    case "pcan-usb":
+    case me.adapters.pcanusb.str:
       return me.pcanUsb;
-    case "canlib":
+    case me.adapters.canlib.str:
       return me.canlib;
     default:
-      console.log(port);
       throw new Error("Unrecognized port type: " + port.type);
     }
   }
