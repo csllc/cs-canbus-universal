@@ -24,7 +24,7 @@ const canlib = 2;
 // TODO: Use a config file for this
 const adapterPriorities = [ 'can-usb-com', 'pcan-usb', 'canlib' ];
 
-// TODO: Should unapplicable filter options fail silently? Make that an option
+// TODO: Should non-applicable filter options fail silently? Make that an option
 // for the user?
 
 
@@ -33,15 +33,24 @@ module.exports = class csCanbus extends Duplex {
   constructor(options) {
     super({ objectMode: true });
 
-    this.canUsbCom = new CANUSBCOM(); // GridConnect CAN-USB-COM
-    this.pcanUsb = new PCANUSB(); // PEAK-System PCAN-USB
-    this.canlib = new CANlib(); // Kvaser CANlib
+    this.setOptions(options);
+
+    this.canUsbCom = new CANUSBCOM(this.options); // GridConnect CAN-USB-COM
+    this.pcanUsb = new PCANUSB(this.options); // PEAK-System PCAN-USB
+    this.canlib = new CANlib(this.options); // Kvaser CANlib
 
     this.ports = undefined;
+    this.selectedModule = undefined;
     this.selectedPort = undefined;
-    this.canModule = undefined;
 
     // TODO: Provide adapter priority list through constructor?
+
+  }
+
+  // Sets (or re-sets) the configuration options
+  setOptions(options) {
+    // Save for later use
+    this.options = Object.assign(DEFAULT_OPTIONS, options);
   }
 
   list() {
@@ -72,91 +81,94 @@ module.exports = class csCanbus extends Duplex {
   open(ports) {
     var me = this;
 
-    // Automatically select one CAN adapter port on the system
-    let adapters;
-    let type;
-    
-    // Iterate through the adapter priorities list and pull out relevant
-    // elements from the array of all adapters obtained in list()
-    for (const t in adapterPriorities) {
-      let type = adapterPriorities[t];
-      console.log("Trying " + type + "...");
+    return new Promise(function(resolve) {
 
-      switch (type) {
-      case 'can-usb-com':
-        me.canModule = me.canUsbCom;
-        break;
-      case 'pcan-usb':
-        me.canModule = me.pcanUsb;
-        break;
-      case 'canlib':
-        me.canModule = me.canlib;
-        break;
-      default:
-        throw new Error('Unknown CAN adapter type: ' + type);
-        break;
+
+      // Sequentially and recursively try to open each port by executing a
+      // promise on each of the members of the ports array
+
+      // Return on the first successful attempt to open a port
+      try {
+        me._tryOpenPort(ports, 0);
+      } catch (err) {
+        // An error is only thrown by me._tryOpenPort if none of the ports
+        // are able to be opened.
+        reject(err);
       }
-
-      adapters = ports.filter((port) => {
-        return port.type === type;
-      });
-      
-      // Try to connect to each adapter in the adapters array populated above,
-      // and break out upon the first success
-      for (const p in adapters)  {
-        let port = adapters[p];
-        
-        return me.canModule.open(port.path)
-          .then(() => {
-            // Save port
-            me.selectedPort = port;
-            // Event passthrough
-            me.canModule.on('error', (err) => { me.emit('error', err); });
-            me.canModule.on('data', (msg) => { me.push(msg); });
-            me.canModule.on('write', (msg) => { me.emit('write', msg); });
-            // Emit open event on behalf of the module we're wrapping
-            me.emit('open');
-          })
-          .catch((err) => {
-            // Silently fail here so we try the next available adapter
-          });
-      }
-      // If all ports for the adapter type fail, loop through again with the
-      // next type.
-    }
-
-    // If me.selectedPort isn't defined by now, then there aren't any usable
-    // CAN ports in the system
-    if (me.selectedPort === undefined) {
-      throw new Error("No usable CAN ports found");
-    }
+    });
   }
 
   close() {
     // Emit close event on behalf of the module we're wrapping
     this.emit('close');
-    return this.canModule.close();
+    // TODO: try binding instead?
+    return this.selectedModule.close();
   }
 
   write(msg) {
-    return this.canModule.write(msg);
+    return this.selectedModule.write(msg);
   }
 
   status() {
-    return this.canModule.status();
+    return this.selectedModule.status();
   }
 
   isOpen() {
-    return this.canModule.isOpen();
+    if (this.selectedModule) {
+      return this.selectedModule.isOpen();
+    } else {
+      return false;
+    }
   }
 
   isConnected() {
-    return this.canModule.isConnected();
+    return this.selectedModule.isConnected();
   }
   
   _read() {}
   
   _write() {}
 
+  _tryOpenPort(ports, p) {
+    var me = this;
+    // Attempt to open a given port using its corresponding module's open()
+    // method
+    console.log("Attempting to open port " + p + "...");
+    me.selectedModule = me._lookupModule(ports[p]);
+    me.selectedModule.open(ports[p].path);
+      .then(() => {
+        console.log("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
+        // If successful, save the module (already assigned) and port for posterity
+        me.selectedPort = ports[p];
+      })
+      .catch((err) => {
+        console.error("Unable to open port " + p + " (" + ports[p].path + ") using " + ports[p].type + ": " + err);
+        p++;
+        if (p < ports.length) {
+          me._tryOpenPort(ports, p);
+        } else {
+          throw new Error("Unable to open any of " + p + " available CAN ports.");
+        }
+      });
+  }
+
+  _lookupModule(port) {
+    var me = this;
+    
+    switch(port.type) {
+    case "can-usb-com":
+      return me.canUsbCom;
+    case "pcan-usb":
+      return me.pcanUsb;
+    case "canlib":
+      return me.canlib;
+    default:
+      console.log(port);
+      throw new Error("Unrecognized port type: " + port.type);
+    }
+  }
 }
+
+
+
 
