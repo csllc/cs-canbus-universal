@@ -12,7 +12,7 @@ const DEFAULT_OPTIONS = {
   filters: [],
   loopback: false,
   // Priority of adapters, highest (left) to lowest (right)
-  priorities: [ 'can-usb-com', 'canlib', 'pcan-usb' ],
+  priorities: [ 'pcan-usb', 'can-usb-com', 'canlib' ],
 };
 
 // Default adapter list; priorities are assigned in constructor
@@ -102,13 +102,15 @@ module.exports = class csCanbus extends Duplex {
       // first successful attempt to open a port.
       //
       // Upon success, event handlers are set up by _tryOpenPorts as well.
-      try {
-        me._tryOpenPorts(ports, 0);
-      } catch (err) {
+      me._tryOpenPorts(ports, 0)
+        .then(() => {
+          resolve();
+        })
+        .catch((err) => {
         // An error is only thrown by me._tryOpenPorts if none of the ports
         // are able to be opened.
-        reject(err);
-      }
+          reject(err);
+        });
     });
   }
 
@@ -119,8 +121,6 @@ module.exports = class csCanbus extends Duplex {
   }
 
   write(msg) {
-    // console.log(msg);
-    console.log(this.selectedModule);
     return this.selectedModule.write(msg);
   }
 
@@ -146,33 +146,37 @@ module.exports = class csCanbus extends Duplex {
 
   _tryOpenPorts(ports, p) {
     var me = this;
-    // Attempt to open a given port using its corresponding module's open()
-    // method
-    console.log("Attempting to open port " + p + "...");
-    let module = me._lookupModule(ports[p]);
-    module.open(ports[p].path)
-      .then(() => {
-        console.log("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
-        // If successful, save the module (already assigned) and port for posterity
-        me.selectedPort = ports[p];
-        me.selectedModule = module;
-        // Event passthrough
-        me.selectedModule.on('error', (err) => { me.emit('error', err); });
-        me.selectedModule.on('data', (msg) => { me.push(msg); });
-        me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
-        // Emit open event on behalf of the module we're wrapping
-        me.emit('open');
-      })
-      .catch((err) => {
-        console.error("Unable to open port " + p + " (" + ports[p].path + ") using " + ports[p].type + ": " + err);
-        p++;
-        if (p < ports.length) {
-          // Recursively try the next port in the ports array
-          me._tryOpenPorts(ports, p);
-        } else {
-          throw new Error("Unable to open any of " + p + " available CAN ports.");
-        }
-      });
+
+    return new Promise(function(resolve) {
+      // Attempt to open a given port using its corresponding module's open()
+      // method
+      console.log("Attempting to open port " + p + "...");
+      let module = me._lookupModule(ports[p]);
+      module.open(ports[p].path)
+        .then(() => {
+          console.log("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
+          // If successful, save the module (already assigned) and port for posterity
+          me.selectedPort = ports[p];
+          me.selectedModule = module;
+          // Event passthrough
+          me.selectedModule.on('error', (err) => { me.emit('error', err); });
+          me.selectedModule.on('data', (msg) => { me.push(msg); });
+          me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
+          // Emit open event on behalf of the module we're wrapping
+          me.emit('open');
+          resolve();
+        })
+        .catch((err) => {
+          console.error("Unable to open port " + p + " (" + ports[p].path + ") using " + ports[p].type + ": " + err);
+          p++;
+          if (p < ports.length) {
+            // Recursively try the next port in the ports array
+            resolve(me._tryOpenPorts(ports, p));
+          } else {
+            throw new Error("Unable to open any of " + p + " available CAN ports.");
+          }
+        });
+    });
   }
 
   _lookupModule(port) {
