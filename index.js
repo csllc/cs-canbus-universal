@@ -159,32 +159,43 @@ module.exports = class csCanbus extends Duplex {
     var me = this;
 
     return new Promise(function(resolve, reject) {
+      if (id == "auto") {
+        console.debug("cs-canbus-universal: Automatically selecting CAN port");
+        console.debug("cs-canbus-universal: Port priority: " + JSON.stringify(me.options.priority));
+        me.list()
+          .then((ports) => {
+            return me.autoOpen(ports)
+              .catch((err) => {
+                console.error(err);
+                process.exit(1);
+              });
+          });
+      } else {
+        // Resovle the ID to a module name and port/path
+        let port = {};
+        port.type = id.split("_")[0];
+        port.path = id.split("_")[1];
+        if (!isNaN(port.path)) { port.path = Number(port.path); }
 
-      // Resovle the ID to a module name and port/path
-      let port = {};
-      port.type = id.split("_")[0];
-      port.path = id.split("_")[1];
-      if (!isNaN(port.path)) { port.path = Number(port.path); }
-      //console.log(port);
+        let module = me._lookupModule(port);
+        module.open(port.path)
+          .then(() => {
+            console.debug("opened port " + port.path + " using " + port.type);
 
-      let module = me._lookupModule(port);
-      module.open(port.path)
-        .then(() => {
-          console.debug("opened port " + port.path + " using " + port.type);
-
-          // If successful, save the module (already assigned) and port for posterity
-          me.selectedPort = port;
-          me.selectedModule = module;
-          // Event passthrough
-          me.selectedModule.on('error', (err) => { me.emit('error', err); });
-          me.selectedModule.on('data', (msg) => { me.push(msg); });
-          me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
-          resolve();
-        })
-        .then(() => {
-          //Emit open event on behalf of the module we're wrapping
-          me.emit('open');
-        });
+            // If successful, save the module and port for posterity
+            me.selectedPort = port;
+            me.selectedModule = module;
+            // Event passthrough
+            me.selectedModule.on('error', (err) => { me.emit('error', err); });
+            me.selectedModule.on('data', (msg) => { me.push(msg); });
+            me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
+            resolve();
+          })
+          .then(() => {
+            //Emit open event on behalf of the module we're wrapping
+            me.emit('open');
+          });
+      }
     });
   };
 
@@ -247,12 +258,12 @@ module.exports = class csCanbus extends Duplex {
     return new Promise(function(resolve, reject) {
       // Attempt to open a given port using its corresponding module's open()
       // method
-      console.debug("Attempting to open port " + p + "...");
+      console.debug("Attempting to open port " + p + ": " + ports[p].type + "_" + ports[p].path + " ...");
       let module = me._lookupModule(ports[p]);
       module.open(ports[p].path)
         .then(() => {
-          console.debug("Opened port " + p + " (" + ports[p].path + ") using " + ports[p].type);
-          // If successful, save the module (already assigned) and port for posterity
+          console.debug("Opened port " + p + ": " + ports[p].type + "_" + ports[p].path);
+          // If successful, save the module and port for posterity
           me.selectedPort = ports[p];
           me.selectedModule = module;
           // Event passthrough
