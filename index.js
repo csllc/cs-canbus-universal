@@ -18,8 +18,6 @@ if (process.platform == "win32") {
 }
 
 // Default configuration used unless overridden by caller
-
-
 var DEFAULT_OPTIONS;
 
 // Default priority of adapters, highest (left) to lowest (right)
