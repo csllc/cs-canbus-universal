@@ -167,7 +167,7 @@ module.exports = class csCanbus extends Duplex {
             return me.autoOpen(ports)
               .catch((err) => {
                 console.error(err);
-                process.exit(1);
+                reject(err);
               });
           });
       } else {
@@ -194,10 +194,13 @@ module.exports = class csCanbus extends Duplex {
           .then(() => {
             //Emit open event on behalf of the module we're wrapping
             me.emit('open');
+          })
+          .catch((err) => {
+            reject(err);
           });
       }
     });
-  };
+  }
 
   autoOpen(ports) {
     var me = this;
