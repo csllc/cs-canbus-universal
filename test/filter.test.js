@@ -58,7 +58,7 @@ describe('No Filters', () => {
 
     let p = can.should.emit('open');
 
-    can.open(result[0].path);
+    can.open(result[0].id);
 
     return p;
   })

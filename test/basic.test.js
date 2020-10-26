@@ -214,7 +214,7 @@ describe('Receive a Message', () => {
     // here we simulate a receipt of a message thru the serial port
     // we could also send a packet and loop it back
     //
-    can._onData(Buffer.from(':X10EF8081N0102030405060708;'));
+    can.push({id: 0x10EF8081, ext: true, buf: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8])});
 
   });
 
@@ -237,7 +237,7 @@ describe('Receive a Message', () => {
 
     // here we simulate a receipt of a message thru the serial port
     // we could also send a packet and loop it back
-    can._onData(Buffer.from(':S100N0807060504030201;'));
+    can.push({id: 0x100, ext: false, buf: Buffer.from([8, 7, 6, 5, 4, 3, 2, 1])});
 
   });
 
