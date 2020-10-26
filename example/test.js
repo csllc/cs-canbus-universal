@@ -11,7 +11,7 @@ let can = new Can({
 
 can.list()
   .then((ports) => {
-    return can.open(ports)
+    return can.autoOpen(ports)
       .catch((err) => {
         console.error(err);
         process.exit(1);

@@ -36,7 +36,7 @@ board.list()
 
     // Open the COM port and initialize the USBCAN device...
     //console.log('opening ', ports[0].path);
-    return board.open(ports);
+    return board.autoOpen(ports);
 
   })
   .then(function() {

@@ -146,7 +146,7 @@ can1.list()
     // open the last ports.  When successful, the J1939 instances will
     // emit 'open'
     return Promise.all([
-      can1.open(ports),
+      can1.autoOpen(ports),
     ]);
 
   })
@@ -162,7 +162,7 @@ can2.list()
     // open the last ports.  When successful, the J1939 instances will
     // emit 'open'
     return Promise.all([
-      can2.open(ports),
+      can2.autoOpen(ports),
     ]);
 
   })

@@ -50,7 +50,7 @@ board.list()
 
       // Open the COM port and initialize the USBCAN device...
       //return board.open(ports[0].path);
-      return board.open(ports);
+      return board.autoOpen(ports);
     } else {
       console.error('No CAN-USB-COM Devices found');
     }
