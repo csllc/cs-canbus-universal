@@ -251,6 +251,10 @@ module.exports = class csCanbus extends Duplex {
     return this.selectedModule.isConnected();
   }
   
+  _onData() {
+    return this.selectedModule._onData();
+  }
+
   _read() {}
   
   _write() {}
