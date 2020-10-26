@@ -68,7 +68,7 @@ Example output:
     id: 'canlib_0' } ]
 ```
 
-Each element of `ports` contains `path`, `type`, and `id`, which uniquely indentify the port in a constistent manner, in addition to properties specific to the implementation of a library.
+Each element of `ports` contains `path`, `type`, and `id`, which uniquely identify the port in a consistent manner, in addition to properties specific to the implementation of a library.
 
 ### Opening the first available port
 
@@ -111,7 +111,7 @@ Opened port 2: canlib_0
 
 ### Opening a specific port
 
-Alternatively, a specifc port may be opened by passing an ID from a single element of the `ports` array to the `open()` method.
+Alternatively, a specific port may be opened by passing an ID from a single element of the `ports` array to the `open()` method.
 
 ```js
 const Can = require('@csllc/cs-canbus-universal');
@@ -167,7 +167,7 @@ opened port COM9 using can-usb-com
 
 ### Filtering
 
-See the documentation of the individual CAN modules for details on filtering. While this module passes the constructor's `filter` parameter directly to the modules, they may have differences in implemenation that affect certain use cases.
+See the documentation of the individual CAN modules for details on filtering. While this module passes the constructor's `filter` parameter directly to the modules, they may have differences in implementation that affect certain use cases.
 
 ### Streaming
 
