@@ -138,17 +138,57 @@ module.exports = class csCanbus extends Duplex {
           if (CANLIB) {
             ports[me.adapters.canlib.priority].forEach((elem) => {
               elem['type'] = me.adapters.canlib.str;
+
             });
           }
           // Concatenate nested arrays returned by the promises
           ports = [].concat.apply([], ports);
+
+          // Add an ID property as well, which will uniquely identify each port
+          ports.forEach((elem) => {
+            elem['id'] = (elem.type + "_" + elem.path);
+          });
+          
           me.ports = ports;
           resolve(ports);
         });
     });
   }
 
-  open(ports) {
+  open(id) {
+    var me = this;
+
+    return new Promise(function(resolve, reject) {
+
+      // Resovle the ID to a module name and port/path
+      let port = {};
+      port.type = id.split("_")[0];
+      port.path = id.split("_")[1];
+      if (!isNaN(port.path)) { port.path = Number(port.path); }
+      //console.log(port);
+
+      let module = me._lookupModule(port);
+      module.open(port.path)
+        .then(() => {
+          console.debug("opened port " + port.path + " using " + port.type);
+
+          // If successful, save the module (already assigned) and port for posterity
+          me.selectedPort = port;
+          me.selectedModule = module;
+          // Event passthrough
+          me.selectedModule.on('error', (err) => { me.emit('error', err); });
+          me.selectedModule.on('data', (msg) => { me.push(msg); });
+          me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
+          resolve();
+        })
+        .then(() => {
+          //Emit open event on behalf of the module we're wrapping
+          me.emit('open');
+        });
+    });
+  };
+
+  autoOpen(ports) {
     var me = this;
 
     return new Promise(function(resolve, reject) {
