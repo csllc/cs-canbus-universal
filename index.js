@@ -181,7 +181,6 @@ module.exports = class csCanbus extends Duplex {
         module.open(port.path)
           .then(() => {
             console.debug("opened port " + port.path + " using " + port.type);
-
             // If successful, save the module and port for posterity
             me.selectedPort = port;
             me.selectedModule = module;
@@ -189,6 +188,7 @@ module.exports = class csCanbus extends Duplex {
             me.selectedModule.on('error', (err) => { me.emit('error', err); });
             me.selectedModule.on('data', (msg) => { me.push(msg); });
             me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
+            me.selectedModule.on('status', (status) => { me.emit('status', status); });
             // Emit open event on behalf of the module we're wrapping
             me.emit('open');
             resolve();
