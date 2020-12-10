@@ -8,9 +8,14 @@ var PCANUSB = undefined;
 var CANLIB = undefined;
 
 if ((process.platform == "win32") ||
+    (process.platform == "darwin") ||
+    (process.platform == "linux")) {
+  CANUSBCOM = require('can-usb-com');
+}
+
+if ((process.platform == "win32") ||
     (process.platform == "darwin")) {
   PCANUSB = require('@csllc/cs-pcan-usb');
-  CANUSBCOM = require('can-usb-com');
 }
 
 if (process.platform == "win32") {
@@ -109,13 +114,19 @@ module.exports = class csCanbus extends Duplex {
       for (const p in me.options.priority) {
         switch (me.options.priority[p]) {
         case me.adapters.canusbcom.str:
-          adapter_list.push(me.canUsbCom.list());
+          if (CANUSBCOM) {
+            adapter_list.push(me.canUsbCom.list());
+          }
           break;
         case me.adapters.pcanusb.str:
-          adapter_list.push(me.pcanUsb.list());
+          if (PCANUSB) {
+            adapter_list.push(me.pcanUsb.list());
+          }
           break;
         case me.adapters.canlib.str:
-          adapter_list.push(me.canlib.list());
+          if (CANLIB) {
+            adapter_list.push(me.canlib.list());
+          }
           break;
         }
       }
