@@ -6,6 +6,7 @@ const { Duplex } = require('stream');
 var CANUSBCOM = undefined;
 var PCANUSB = undefined;
 var CANLIB = undefined;
+var SOCKETCAN = undefined;
 
 if ((process.platform == "win32") ||
     (process.platform == "darwin") ||
@@ -20,6 +21,10 @@ if ((process.platform == "win32") ||
 
 if (process.platform == "win32") {
   CANLIB = require('@csllc/cs-canlib');
+}
+
+if (process.platform == "linux") {
+  SOCKETCAN = require('@csllc/cs-socketcan');
 }
 
 // Default configuration used unless overridden by caller
@@ -43,6 +48,13 @@ case "darwin":
     priority: [ 'pcan-usb', 'can-usb-com' ]
   };
   break;
+case "linux":
+  DEFAULT_OPTIONS = {
+    canRate: 250000,
+    loopback: false,
+    priority: [ 'can-usb-com', 'socketcan' ]
+  };
+  break;
 default:
   DEFAULT_OPTIONS = {
     canRate: 250000,
@@ -58,7 +70,8 @@ default:
 const DEFAULT_ADAPTERS = {
   canusbcom: { str: "can-usb-com", priority: undefined },
   pcanusb: { str: "pcan-usb", priority: undefined },
-  canlib: { str: "canlib", priority: undefined }
+  canlib: { str: "canlib", priority: undefined },
+  socketcan: { str: "socketcan", priority: undefined }
 };
 
 // Module
@@ -77,6 +90,9 @@ module.exports = class csCanbus extends Duplex {
     }
     if (CANLIB) {
       this.canlib = new CANLIB(this.options); // Kvaser CANlib
+    }
+    if (SOCKETCAN) {
+      this.socketcan = new SOCKETCAN(this.options); // Linux SocketCAN
     }
 
     this.ports = undefined; // List of all available ports across all modules
@@ -128,6 +144,11 @@ module.exports = class csCanbus extends Duplex {
             adapter_list.push(me.canlib.list());
           }
           break;
+        case me.adapters.socketcan.str:
+          if (SOCKETCAN) {
+            adapter_list.push(me.socketcan.list());
+          }
+          break;
         }
       }
       
@@ -149,9 +170,14 @@ module.exports = class csCanbus extends Duplex {
           if (CANLIB) {
             ports[me.adapters.canlib.priority].forEach((elem) => {
               elem['type'] = me.adapters.canlib.str;
-
             });
           }
+          if (SOCKETCAN) {
+            ports[me.adapters.socketcan.priority].forEach((elem) => {
+              elem['type'] = me.adapters.socketcan.str;
+            });
+          }
+
           // Concatenate nested arrays returned by the promises
           ports = [].concat.apply([], ports);
 
@@ -313,6 +339,8 @@ module.exports = class csCanbus extends Duplex {
       return me.pcanUsb;
     case me.adapters.canlib.str:
       return me.canlib;
+    case me.adapters.socketcan.str:
+      return me.socketcan;
     default:
       throw new Error("Unrecognized port type: " + port.type);
     }

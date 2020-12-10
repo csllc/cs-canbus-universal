@@ -6,7 +6,6 @@ const Can = require('..');
 
 let board = new Can({
   canRate: 250000,
-  priority: ['pcan-usb', 'canlib', 'can-usb-com']
 });
 
 // Event handler
