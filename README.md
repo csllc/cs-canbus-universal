@@ -5,12 +5,13 @@ This module encapsulates functionality for the following CAN libraries and adapt
  - `can-usb-com`: ([npm](https://www.npmjs.com/package/can-usb-com), [GitHub](https://github.com/bglase/can-usb-com)) GridConnect CAN-USB-COM
  - `cs-pcan-usb`: ([npm](https://www.npmjs.com/package/@csllc/cs-pcan-usb), [GitHub](https://github.com/csllc/cs-pcan-usb)) PEAK-System PCAN-USB
  - `cs-canlib`: ([npm](https://www.npmjs.com/package/@csllc/cs-canlib), [GitHub](https://github.com/csllc/cs-canlib)) Kvaser Leaf Light v2
+ - `cs-socketcan`: ([npm](https://www.npmjs.com/package/@csllc/cs-socketcan), [GitHub](https://github.com/csllc/cs-socketcan)) PiCAN 2 for Raspberry Pi
 
 Development is focused on the USB CAN adapters listed above, but this module and its dependencies may work with others supported by the underlying libraries with little to no modification.
 
 ## Getting Started
 
-The following assumes that [NodeJS](https://nodejs.org) is already installed. This module was developed using Node v12.18.4 and v10.22.0 for Windows 10 x86_64.
+The following assumes that [NodeJS](https://nodejs.org) is already installed. This module was developed using Node v12.18.4 and v10.22.0 for Windows 10 64-bit, macOS 10.15.7, and Raspberry Pi OS 10.6.
 
 To install this module, run:
 ```
@@ -175,12 +176,14 @@ This module extends the NodeJS stream interface, so it can be piped into other s
 
 ### Event and method wrapping
 
-The following events and methods are wrapped or passed through by the `cs-canbus-universal` module, allowing it to be used in place of other modules. Events `open` and `close` are emitted by this module directly.
+The following events and methods are wrapped or passed through by the `cs-canbus-universal` module. The `open` and `close` events are emitted by this module directly.
 
 #### Events
  - `error`
  - `data`
  - `write`
+ - `open`
+ - `close`
 
 #### Methods
  - `write(msg)`

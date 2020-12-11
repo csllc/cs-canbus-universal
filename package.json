@@ -11,7 +11,7 @@
     "can-usb-com": "^4.0.1"
   },
   "dependencies": {
-    "@csllc/cs-socketcan": "0.0.1",
+    "@csllc/cs-socketcan": "0.0.2",
     "eslint": "^7.10.0"
   },
   "devDependencies": {
