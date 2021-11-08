@@ -1,13 +1,13 @@
 {
   "name": "@csllc/cs-canbus-universal",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Universal CAN Bus module for NodeJS",
   "main": "index.js",
   "license": "MIT",
   "author": "cwalden@controls.com",
   "optionalDependencies": {
     "@csllc/cs-canlib": "^0.1.7",
-    "@csllc/cs-pcan-usb": "^0.1.10",
+    "@csllc/cs-pcan-usb": "^0.1.11",
     "@csllc/cs-socketcan": "0.0.3",
     "can-usb-com": "^4.0.2"
   },
