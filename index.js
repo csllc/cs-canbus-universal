@@ -124,7 +124,7 @@ module.exports = class csCanbus extends Duplex {
   list() {
     var me = this;
 
-    return new Promise(function(resolve) {
+    return new Promise(function(resolve, reject) {
       // Enumerate adapters for each CAN adapter type, in order of priority
       var adapter_list = [];
       for (const p in me.options.priority) {
@@ -151,44 +151,46 @@ module.exports = class csCanbus extends Duplex {
           break;
         }
       }
-      
+
       // Generate list of all available ports, across all modules and
       // preserving order
+      // Promise.all(adapter_list)
       Promise.all(adapter_list)
-        .then((ports) => {
-          // Identify each adapter's type by adding a type element to the port list
-          if (CANUSBCOM) {
-            ports[me.adapters.canusbcom.priority].forEach((elem) => {
-              elem['type'] = me.adapters.canusbcom.str;
-            });
-          }
-          if (PCANUSB) {
-            ports[me.adapters.pcanusb.priority].forEach((elem) => {
-              elem['type'] = me.adapters.pcanusb.str;
-            });
-          }
-          if (CANLIB) {
-            ports[me.adapters.canlib.priority].forEach((elem) => {
-              elem['type'] = me.adapters.canlib.str;
-            });
-          }
-          if (SOCKETCAN) {
-            ports[me.adapters.socketcan.priority].forEach((elem) => {
-              elem['type'] = me.adapters.socketcan.str;
-            });
-          }
-
-          // Concatenate nested arrays returned by the promises
-          ports = [].concat.apply([], ports);
-
-          // Add an ID property as well, which will uniquely identify each port
-          ports.forEach((elem) => {
-            elem['id'] = (elem.type + "_" + elem.path);
+      .then((ports) => {
+        // Identify each adapter's type by adding a type element to the port list
+        if (CANUSBCOM && ports[me.adapters.canusbcom.priority]) {
+          ports[me.adapters.canusbcom.priority].forEach((elem) => {
+            elem['type'] = me.adapters.canusbcom.str;
           });
-          
-          me.ports = ports;
-          resolve(ports);
+        }
+        if (PCANUSB && ports[me.adapters.pcanusb.priority]) {
+          ports[me.adapters.pcanusb.priority].forEach((elem) => {
+            elem['type'] = me.adapters.pcanusb.str;
+          });
+        }
+        if (CANLIB && ports[me.adapters.canlib.priority]) {
+          ports[me.adapters.canlib.priority].forEach((elem) => {
+            elem['type'] = me.adapters.canlib.str;
+          });
+        }
+        if (SOCKETCAN && ports[me.adapters.socketcan.priority]) {
+          ports[me.adapters.socketcan.priority].forEach((elem) => {
+            elem['type'] = me.adapters.socketcan.str;
+          });
+        }
+
+        // Concatenate nested arrays returned by the promises
+        ports = [].concat.apply([], ports);
+
+        // Add an ID property as well, which will uniquely identify each port
+        ports.forEach((elem) => {
+          elem['id'] = (elem.type + "_" + elem.path);
         });
+
+        me.ports = ports;
+        resolve(ports);
+      });
+
     });
   }
 
@@ -199,14 +201,28 @@ module.exports = class csCanbus extends Duplex {
       if (id == "auto") {
         console.debug("cs-canbus-universal: Automatically selecting CAN port");
         console.debug("cs-canbus-universal: Port priority: " + JSON.stringify(me.options.priority));
-        me.list()
+        if (me.ports) {
+          // If we've already built a list of ports use it instead
+          // of rebuilding the list.
+          // There appears to be a bug in the SerialPort package, used
+          // by can-usb-com, where its ::list() method doesn't resolve
+          // when called a second time. This if/else clause works around
+          // it.
+          return me.autoOpen(me.ports)
+          .catch((err) => {
+            console.error(err);
+            reject(err);
+          });
+        } else {
+          me.list()
           .then((ports) => {
             return me.autoOpen(ports)
-              .catch((err) => {
-                console.error(err);
-                reject(err);
-              });
+            .catch((err) => {
+              console.error(err);
+              reject(err);
+            });
           });
+        }
       } else {
         // Resovle the ID to a module name and port/path
         let port = {};
