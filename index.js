@@ -283,7 +283,7 @@ module.exports = class csCanbus extends Duplex {
   }
 
   write(msg) {
-    return this.selectedModule.write(msg);
+    return this.selectedModule.write(msg) || Promise.resolve();
   }
 
   status() {
