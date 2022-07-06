@@ -8,12 +8,11 @@
   "repository": "https://github.com/csllc/cs-canbus-universal",
   "optionalDependencies": {
     "@csllc/cs-canlib": "^0.1.7",
-    "@csllc/cs-pcan-usb": "^0.2.0",
+    "@csllc/cs-pcan-usb": "^0.2.1",
     "@csllc/cs-socketcan": "0.0.3",
     "can-usb-com": "^4.0.2"
   },
-  "dependencies": {
-  },
+  "dependencies": {},
   "devDependencies": {
     "chai": "^4.2.0",
     "chai-events": "0.0.3",
