@@ -10,7 +10,7 @@
     "@csllc/cs-canlib": "^0.1.7",
     "@csllc/cs-pcan-usb": "^0.2.1",
     "@csllc/cs-socketcan": "0.0.3",
-    "can-usb-com": "^4.0.2"
+    "can-usb-com": "^5.0.1"
   },
   "dependencies": {},
   "devDependencies": {
