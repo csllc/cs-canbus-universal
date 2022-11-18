@@ -1,6 +1,6 @@
 {
   "name": "@csllc/cs-canbus-universal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Universal CAN Bus module for NodeJS",
   "main": "index.js",
   "license": "MIT",
