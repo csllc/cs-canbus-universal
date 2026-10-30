@@ -2,77 +2,70 @@
 
 const { Duplex } = require('stream');
 
-// Selectively include modules depending on platform
-var CANUSBCOM = undefined;
-var PCANUSB = undefined;
-var CANLIB = undefined;
-var SOCKETCAN = undefined;
+// The adapter modules are optional dependencies. Each one is only loaded on
+// the platforms it supports, and if it is not installed or fails to load (for
+// example because its vendor driver or library is missing), it is skipped so
+// that the remaining adapters keep working. The reason each skipped module
+// could not be loaded is kept in loadErrors, which is exported as
+// csCanbus.loadErrors.
+const loadErrors = {};
 
-if ((process.platform == "win32") ||
-    (process.platform == "darwin") ||
-    (process.platform == "linux")) {
-  CANUSBCOM = require('can-usb-com');
+function loadAdapterModule(name, platforms) {
+  if (!platforms.includes(process.platform)) {
+    return undefined;
+  }
+  try {
+    return require(name);
+  } catch (err) {
+    loadErrors[name] = err;
+    return undefined;
+  }
 }
 
-if ((process.platform == "win32") ||
-    (process.platform == "darwin")) {
-  PCANUSB = require('@csllc/cs-pcan-usb');
-}
+// Supported adapter types. If another adapter type is added, add it here.
+//  key:       property of this.adapters, and of this for the module instance
+//  str:       adapter type, as used in options.priority and in port IDs
+//  module:    npm package that implements the adapter
+//  platforms: platforms the package supports
+const ADAPTER_TYPES = [
+  { key: 'canusbcom', str: 'can-usb-com', module: '@csllc/can-usb-com',
+    platforms: ['win32', 'darwin', 'linux'], prop: 'canUsbCom' }, // GridConnect CAN-USB-COM
+  { key: 'pcanusb', str: 'pcan-usb', module: '@csllc/cs-pcan-usb',
+    platforms: ['win32', 'darwin'], prop: 'pcanUsb' }, // PEAK-System PCAN-USB
+  { key: 'canlib', str: 'canlib', module: '@csllc/cs-canlib',
+    platforms: ['win32'], prop: 'canlib' }, // Kvaser CANlib
+  { key: 'socketcan', str: 'socketcan', module: '@csllc/cs-socketcan',
+    platforms: ['linux'], prop: 'socketcan' }, // Linux SocketCAN
+];
 
-if (process.platform == "win32") {
-  CANLIB = require('@csllc/cs-canlib');
+// Adapter classes that loaded successfully, by adapter type
+const ADAPTER_CLASSES = {};
+for (const a of ADAPTER_TYPES) {
+  const cls = loadAdapterModule(a.module, a.platforms);
+  if (cls) {
+    ADAPTER_CLASSES[a.str] = cls;
+  }
 }
-
-if (process.platform == "linux") {
-  SOCKETCAN = require('@csllc/cs-socketcan');
-}
-
-// Default configuration used unless overridden by caller
-var DEFAULT_OPTIONS;
 
 // Default priority of adapters, highest (left) to lowest (right)
-switch (process.platform) {
-case "win32":
-  DEFAULT_OPTIONS = {
-    canRate: 250000,
-    filters: [],
-    loopback: false,
-    priority: [ 'can-usb-com', 'pcan-usb', 'canlib' ]
-  };
-  break;
-case "darwin":
-  DEFAULT_OPTIONS = {
-    canRate: 250000,
-    filters: [],
-    loopback: false,
-    priority: [ 'pcan-usb', 'can-usb-com' ]
-  };
-  break;
-case "linux":
-  DEFAULT_OPTIONS = {
-    canRate: 250000,
-    loopback: false,
-    priority: [ 'can-usb-com', 'socketcan' ]
-  };
-  break;
-default:
-  DEFAULT_OPTIONS = {
-    canRate: 250000,
-    filters: [],
-    loopback: false,
-    priority: [ 'can-usb-com' ]
-  };
-  break;
-} 
-
-// Default adapter list; priorities are assigned in constructor
-// If another adapter type is added, be sure to update this
-const DEFAULT_ADAPTERS = {
-  canusbcom: { str: "can-usb-com", priority: undefined },
-  pcanusb: { str: "pcan-usb", priority: undefined },
-  canlib: { str: "canlib", priority: undefined },
-  socketcan: { str: "socketcan", priority: undefined }
+const DEFAULT_PRIORITY = {
+  win32: ['can-usb-com', 'pcan-usb', 'canlib'],
+  darwin: ['pcan-usb', 'can-usb-com'],
+  linux: ['can-usb-com', 'socketcan'],
 };
+
+// Default configuration used unless overridden by caller
+function defaultOptions() {
+  return {
+    canRate: 250000,
+    filters: [],
+    loopback: false,
+    priority: (DEFAULT_PRIORITY[process.platform] || ['can-usb-com']).slice(),
+  };
+}
+
+// Events passed through from the selected adapter module
+const PASSTHROUGH_EVENTS = ['error', 'write', 'status'];
 
 // Module
 module.exports = class csCanbus extends Duplex {
@@ -82,204 +75,127 @@ module.exports = class csCanbus extends Duplex {
     this.setOptions(options);
     this.setAdapters(this.options.priority);
 
-    if (CANUSBCOM) {
-      this.canUsbCom = new CANUSBCOM(this.options); // GridConnect CAN-USB-COM
-    }
-    if (PCANUSB) {
-      this.pcanUsb = new PCANUSB(this.options); // PEAK-System PCAN-USB
-    }
-    if (CANLIB) {
-      this.canlib = new CANLIB(this.options); // Kvaser CANlib
-    }
-    if (SOCKETCAN) {
-      this.socketcan = new SOCKETCAN(this.options); // Linux SocketCAN
+    // Create an instance of each available adapter module, e.g. this.canUsbCom
+    for (const a of ADAPTER_TYPES) {
+      const Adapter = ADAPTER_CLASSES[a.str];
+      if (Adapter) {
+        try {
+          this[a.prop] = new Adapter(this.options);
+        } catch (err) {
+          loadErrors[a.module] = err;
+        }
+      }
     }
 
     this.ports = undefined; // List of all available ports across all modules
     this.selectedModule = undefined; // First module to provide a successfully opened port
     this.selectedPort = undefined; // First port to be successfully opened
+    this._listeners = [];
+  }
+
+  // Why each adapter module that could not be used was skipped, keyed by
+  // package name
+  static get loadErrors() {
+    return loadErrors;
   }
 
   // Sets (or re-sets) the configuration options
   setOptions(options) {
-    // Save for later use
-    this.options = Object.assign(DEFAULT_OPTIONS, options);
+    this.options = Object.assign({}, this.options || defaultOptions(), options);
   }
 
   setAdapters(priority) {
-    this.adapters = DEFAULT_ADAPTERS;
+    this.adapters = {};
+    for (const a of ADAPTER_TYPES) {
+      this.adapters[a.key] = { str: a.str, priority: undefined };
+    }
+
     // Check that all strings in the priorities array are valid
-    for (const p in priority) {
-      if (JSON.stringify(this.adapters).indexOf(priority[p]) == -1) {
-        throw new Error("Unknown adapter in priority list: " + priority[p]);
+    for (const p of priority) {
+      if (!ADAPTER_TYPES.some((a) => a.str === p)) {
+        throw new Error('Unknown adapter in priority list: ' + p);
       }
     }
-    // Based on indicies of the strings in this.options.priorities, set priorities
-    // for adapters
+
+    // Based on indices of the strings in priority, set priorities for adapters
     for (const a in this.adapters) {
       this.adapters[a].priority = priority.indexOf(this.adapters[a].str);
     }
   }
 
-  list() {
-    var me = this;
-
-    return new Promise(function(resolve, reject) {
-      // Enumerate adapters for each CAN adapter type, in order of priority
-      var adapter_list = [];
-      for (const p in me.options.priority) {
-        switch (me.options.priority[p]) {
-        case me.adapters.canusbcom.str:
-          if (CANUSBCOM) {
-            adapter_list.push(me.canUsbCom.list());
-          }
-          break;
-        case me.adapters.pcanusb.str:
-          if (PCANUSB) {
-            adapter_list.push(me.pcanUsb.list());
-          }
-          break;
-        case me.adapters.canlib.str:
-          if (CANLIB) {
-            adapter_list.push(me.canlib.list());
-          }
-          break;
-        case me.adapters.socketcan.str:
-          if (SOCKETCAN) {
-            adapter_list.push(me.socketcan.list());
-          }
-          break;
-        }
+  // Enumerates ports for each CAN adapter type, in order of priority. Each port
+  // gets a type (the adapter type) and an id (type_path) property. If an
+  // adapter type fails to list its ports, it is skipped.
+  async list() {
+    const lists = await Promise.all(this.options.priority.map(async (type) => {
+      const module = this._moduleForType(type);
+      if (!module) {
+        return [];
       }
-
-      // Generate list of all available ports, across all modules and
-      // preserving order
-      // Promise.all(adapter_list)
-      Promise.all(adapter_list)
-      .then((ports) => {
-        // Identify each adapter's type by adding a type element to the port list
-        if (CANUSBCOM && ports[me.adapters.canusbcom.priority]) {
-          ports[me.adapters.canusbcom.priority].forEach((elem) => {
-            elem['type'] = me.adapters.canusbcom.str;
-          });
-        }
-        if (PCANUSB && ports[me.adapters.pcanusb.priority]) {
-          ports[me.adapters.pcanusb.priority].forEach((elem) => {
-            elem['type'] = me.adapters.pcanusb.str;
-          });
-        }
-        if (CANLIB && ports[me.adapters.canlib.priority]) {
-          ports[me.adapters.canlib.priority].forEach((elem) => {
-            elem['type'] = me.adapters.canlib.str;
-          });
-        }
-        if (SOCKETCAN && ports[me.adapters.socketcan.priority]) {
-          ports[me.adapters.socketcan.priority].forEach((elem) => {
-            elem['type'] = me.adapters.socketcan.str;
-          });
-        }
-
-        // Concatenate nested arrays returned by the promises
-        ports = [].concat.apply([], ports);
-
-        // Add an ID property as well, which will uniquely identify each port
-        ports.forEach((elem) => {
-          elem['id'] = (elem.type + "_" + elem.path);
-        });
-
-        me.ports = ports;
-        resolve(ports);
+      let ports;
+      try {
+        ports = await module.list();
+      } catch (err) {
+        console.error('cs-canbus-universal: Unable to list ' + type + ' ports: ' + err);
+        return [];
+      }
+      return (ports || []).map((port) => {
+        port.type = type;
+        port.id = type + '_' + port.path;
+        return port;
       });
+    }));
 
-    });
+    this.ports = lists.flat();
+    return this.ports;
   }
 
-  open(id) {
-    var me = this;
+  async open(id) {
+    if (id === 'auto') {
+      console.debug('cs-canbus-universal: Automatically selecting CAN port');
+      console.debug('cs-canbus-universal: Port priority: ' + JSON.stringify(this.options.priority));
+      // If we've already built a list of ports use it instead of rebuilding
+      // the list. Older versions of SerialPort, used by can-usb-com, had a bug
+      // where list() didn't resolve when called a second time.
+      const ports = this.ports || await this.list();
+      return this.autoOpen(ports);
+    }
 
-    return new Promise(function(resolve, reject) {
-      if (id == "auto") {
-        console.debug("cs-canbus-universal: Automatically selecting CAN port");
-        console.debug("cs-canbus-universal: Port priority: " + JSON.stringify(me.options.priority));
-        if (me.ports) {
-          // If we've already built a list of ports use it instead
-          // of rebuilding the list.
-          // There appears to be a bug in the SerialPort package, used
-          // by can-usb-com, where its ::list() method doesn't resolve
-          // when called a second time. This if/else clause works around
-          // it.
-          return me.autoOpen(me.ports)
-          .catch((err) => {
-            console.error(err);
-            reject(err);
-          });
-        } else {
-          me.list()
-          .then((ports) => {
-            return me.autoOpen(ports)
-            .catch((err) => {
-              console.error(err);
-              reject(err);
-            });
-          });
-        }
-      } else {
-        // Resovle the ID to a module name and port/path
-        let port = {};
-        port.type = id.split("_")[0];
-        port.path = id.split("_")[1];
-        if (!isNaN(port.path)) { port.path = Number(port.path); }
+    // Resolve the ID to a module name and port/path. The type never contains
+    // an underscore, but the path might.
+    const sep = id.indexOf('_');
+    const port = {
+      type: id.slice(0, sep),
+      path: id.slice(sep + 1),
+    };
+    if (sep < 1 || port.path === '') {
+      throw new Error('Invalid port ID: ' + id);
+    }
+    if (!isNaN(port.path)) {
+      port.path = Number(port.path);
+    }
 
-        let module = me._lookupModule(port);
-        module.open(port.path)
-          .then(() => {
-            console.debug("opened port " + port.path + " using " + port.type);
-            // If successful, save the module and port for posterity
-            me.selectedPort = port;
-            me.selectedModule = module;
-            // Event passthrough
-            me.selectedModule.on('error', (err) => { me.emit('error', err); });
-            me.selectedModule.on('data', (msg) => { me.push(msg); });
-            me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
-            me.selectedModule.on('status', (status) => { me.emit('status', status); });
-            // Emit open event on behalf of the module we're wrapping
-            me.emit('open');
-            resolve();
-          })
-          .catch((err) => {
-            reject(err);
-          });
-      }
-    });
+    const module = this._lookupModule(port);
+    await module.open(port.path);
+    console.debug('opened port ' + port.path + ' using ' + port.type);
+    this._attach(module, port);
   }
 
+  // Sequentially tries to open each port in ports. Since ports is arranged in
+  // order of priority, this resolves on the first successful attempt to open a
+  // port, and rejects only if none of the ports can be opened.
   autoOpen(ports) {
-    var me = this;
-
-    return new Promise(function(resolve, reject) {
-      // Sequentially and recursively try to open each port by executing the
-      // module-specific open promise on each of the members of the ports array.
-      //
-      // Since ports is arranged in order of priority, this will return on the
-      // first successful attempt to open a port.
-      //
-      // Upon success, event handlers are set up by _tryOpenPorts as well.
-      me._tryOpenPorts(ports, 0)
-        .then(() => {
-          resolve();
-        })
-        .catch((err) => {
-          // An error is only thrown by me._tryOpenPorts if none of the ports
-          // are able to be opened.
-          reject(err);
-        });
-    });
+    return this._tryOpenPorts(ports, 0);
   }
 
-  close() {
+  async close() {
+    const module = this.selectedModule;
+    this._detach();
     // Emit close event on behalf of the module we're wrapping
     this.emit('close');
-    return this.selectedModule.close();
+    if (module) {
+      return module.close();
+    }
   }
 
   write(msg) {
@@ -299,70 +215,87 @@ module.exports = class csCanbus extends Duplex {
   }
 
   isConnected() {
-    return this.selectedModule.isConnected();
+    if (this.selectedModule) {
+      return this.selectedModule.isConnected();
+    } else {
+      return false;
+    }
   }
-  
-  _onData() {
-    return this.selectedModule._onData();
+
+  _onData(...args) {
+    return this.selectedModule._onData(...args);
   }
 
   _read() {}
-  
+
   _write() {}
 
-  _tryOpenPorts(ports, p) {
-    var me = this;
+  async _tryOpenPorts(ports, p = 0) {
+    if (!ports || ports.length === 0) {
+      throw new Error('No CAN ports available.');
+    }
 
-    return new Promise(function(resolve, reject) {
-      // Attempt to open a given port using its corresponding module's open()
-      // method
-      console.debug("Attempting to open port " + p + ": " + ports[p].type + "_" + ports[p].path + " ...");
-      let module = me._lookupModule(ports[p]);
-      module.open(ports[p].path)
-        .then(() => {
-          console.debug("Opened port " + p + ": " + ports[p].type + "_" + ports[p].path);
-          // If successful, save the module and port for posterity
-          me.selectedPort = ports[p];
-          me.selectedModule = module;
-          // Event passthrough
-          me.selectedModule.on('error', (err) => { me.emit('error', err); });
-          me.selectedModule.on('data', (msg) => { me.push(msg); });
-          me.selectedModule.on('write', (msg) => { me.emit('write', msg); });
-          // Emit open event on behalf of the module we're wrapping
-          me.emit('open');
-          resolve();
-        })
-        .catch((err) => {
-          console.error("Unable to open port " + p + " (" + ports[p].path + ") using " + ports[p].type + ": " + err);
-          p++;
-          if (p < ports.length) {
-            // Recursively try the next port in the ports array
-            resolve(me._tryOpenPorts(ports, p));
-          } else {
-            reject("Unable to open any of " + p + " available CAN ports.");
-          }
-        });
-    });
+    for (; p < ports.length; p++) {
+      const port = ports[p];
+      console.debug('Attempting to open port ' + p + ': ' + port.type + '_' + port.path + ' ...');
+      try {
+        const module = this._lookupModule(port);
+        await module.open(port.path);
+        console.debug('Opened port ' + p + ': ' + port.type + '_' + port.path);
+        this._attach(module, port);
+        return;
+      } catch (err) {
+        console.error('Unable to open port ' + p + ' (' + port.path + ') using ' + port.type + ': ' + err);
+      }
+    }
+
+    throw new Error('Unable to open any of ' + ports.length + ' available CAN ports.');
+  }
+
+  // Saves the module and port that were opened, passes the module's events
+  // through, and emits open on behalf of the module
+  _attach(module, port) {
+    this._detach();
+    this.selectedPort = port;
+    this.selectedModule = module;
+
+    this._listen('data', (msg) => { this.push(msg); });
+    for (const event of PASSTHROUGH_EVENTS) {
+      this._listen(event, (arg) => { this.emit(event, arg); });
+    }
+
+    this.emit('open');
+  }
+
+  _listen(event, listener) {
+    this.selectedModule.on(event, listener);
+    this._listeners.push([event, listener]);
+  }
+
+  // Removes the event listeners added by _attach, so that the module can be
+  // opened again without passing its events through twice
+  _detach() {
+    if (this.selectedModule) {
+      for (const [event, listener] of this._listeners) {
+        this.selectedModule.removeListener(event, listener);
+      }
+    }
+    this._listeners = [];
+  }
+
+  _moduleForType(type) {
+    const a = ADAPTER_TYPES.find((t) => t.str === type);
+    return a ? this[a.prop] : undefined;
   }
 
   _lookupModule(port) {
-    var me = this;
-    
-    switch(port.type) {
-    case me.adapters.canusbcom.str:
-      return me.canUsbCom;
-    case me.adapters.pcanusb.str:
-      return me.pcanUsb;
-    case me.adapters.canlib.str:
-      return me.canlib;
-    case me.adapters.socketcan.str:
-      return me.socketcan;
-    default:
-      throw new Error("Unrecognized port type: " + port.type);
+    if (!ADAPTER_TYPES.some((a) => a.str === port.type)) {
+      throw new Error('Unrecognized port type: ' + port.type);
     }
+    const module = this._moduleForType(port.type);
+    if (!module) {
+      throw new Error('Adapter module for ' + port.type + ' is not available');
+    }
+    return module;
   }
-}
-
-
-
-
+};

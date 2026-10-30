@@ -5,7 +5,7 @@
 const CanBus = require('..');
 const chai = require('chai');
 const expect = chai.expect;
-const should = chai.should();
+chai.should();
 chai.use(require('chai-events'));
 
 const CAN_OPTIONS = {

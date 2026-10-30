@@ -1,0 +1,110 @@
+# Test the package, then publish it to npm.
+#
+# Triggered by pushing a version tag, e.g.:
+#   npm version patch      # bumps package.json and creates tag vX.Y.Z
+#   git push --follow-tags
+#
+# Publishing uses npm trusted publishing (OIDC), so no npm token is stored in
+# GitHub. The trusted publisher on npmjs.com must name this repository and the
+# workflow file "release.yml".
+#
+# The module is plain JavaScript. The adapter modules it wraps are optional
+# dependencies, each published with its own prebuilt binaries (or none), so
+# there is nothing to build here. An adapter module that does not install or
+# load on a platform (for example because its vendor driver is missing on the
+# runner) is skipped at run time, so the unit tests (test/unit.test.js) use
+# fake adapters and run on every supported platform and Node version. The
+# hardware tests (test/basic.test.js and test/filter.test.js) need a CAN
+# adapter on a live CAN bus, so they are not run here; run
+# `npm run test:hardware` locally before tagging a release.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+        node: [20, 22, 24]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run unit tests
+        run: npm test
+
+      # For information: which adapter modules are usable on this runner, and
+      # why the others were skipped. The runners have no CAN adapters or vendor
+      # drivers, so some modules are expected to be skipped.
+      - name: Show available adapter modules
+        shell: bash
+        run: |
+          node -e "
+            const Can = require('.');
+            const can = new Can();
+            console.log('Priority:', can.options.priority);
+            for (const [name, err] of Object.entries(Can.loadErrors)) {
+              console.log('Skipped', name + ':', err.message.split('\n')[0]);
+            }
+            can.list().then((ports) => console.log('list() =', ports));
+          "
+
+  publish:
+    name: Publish to npm
+    needs: test
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      id-token: write   # required for npm trusted publishing
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Check that the tag matches package.json
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $VERSION"
+            exit 1
+          fi
+
+      - name: Check package contents
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish
