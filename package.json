@@ -15,7 +15,7 @@
     "@csllc/can-usb-com": "^6.0.1",
     "@csllc/cs-canlib": "^0.2.2",
     "@csllc/cs-pcan-usb": "^0.4.0",
-    "@csllc/cs-socketcan": "^0.1.0"
+    "@csllc/cs-socketcan": "^0.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
