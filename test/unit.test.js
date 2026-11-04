@@ -48,6 +48,27 @@ class FakeAdapter extends EventEmitter {
   }
 }
 
+// A fake adapter that reports its status like the real adapter modules
+class StatusAdapter extends FakeAdapter {
+  async open(path) {
+    await super.open(path);
+    this.state = 'error-active';
+    this.emit('status', await this.status()); // before open() resolves
+  }
+
+  async close() {
+    await super.close();
+    this.emit('status', await this.status());
+  }
+
+  async status() {
+    if (this.opened === undefined) {
+      return { port: null, connection: 'closed', state: null, bitrate: null };
+    }
+    return { port: this.opened, connection: 'connected', state: this.state, bitrate: 250000 };
+  }
+}
+
 // Creates an instance with fake can-usb-com and pcan-usb adapters
 function makeBus(canUsbCom, pcanUsb, options = {}) {
   const can = new CanBus(Object.assign({
@@ -234,7 +255,7 @@ describe('Events', () => {
     const ps = can.should.emit('status');
     const pe = can.should.emit('error');
     can.write({ id: 1, ext: false, buf: [] });
-    adapter.emit('status', { connected: true });
+    adapter.emit('status', { port: 'COM9', connection: 'connected', state: null, bitrate: 250000 });
     adapter.emit('error', new Error('bus off'));
     await Promise.all([pw, ps, pe]);
   });
@@ -254,6 +275,64 @@ describe('Events', () => {
     can.on('write', () => { count++; });
     can.write({ id: 1, ext: false, buf: [] });
     expect(count).to.eq(1);
+  });
+});
+
+describe('Status', () => {
+  const CLOSED = { port: null, connection: 'closed', state: null, bitrate: null };
+
+  it('should report a closed port if no port is open', async () => {
+    const can = makeBus(new StatusAdapter([{ path: 'COM9' }]), undefined);
+    expect(await can.status()).to.deep.eq(CLOSED);
+  });
+
+  it('should report a closed port if the adapter has no status()', async () => {
+    const adapter = new FakeAdapter([{ path: 'COM9' }]);
+    const can = makeBus(adapter, undefined);
+    await can.open('can-usb-com_COM9');
+    expect(await can.status()).to.deep.eq(CLOSED);
+  });
+
+  it('should identify the port by its ID', async () => {
+    const can = makeBus(new StatusAdapter([{ path: 'COM9' }]), undefined);
+    await can.open('can-usb-com_COM9');
+    expect(await can.status()).to.deep.eq({
+      port: 'can-usb-com_COM9', connection: 'connected', state: 'error-active', bitrate: 250000,
+    });
+  });
+
+  it('should emit status changes, including the one reported while opening', async () => {
+    const adapter = new StatusAdapter([{ path: 'COM9' }]);
+    const can = makeBus(adapter, undefined);
+    const events = [];
+    can.on('status', (status) => events.push(status));
+
+    await can.open('can-usb-com_COM9');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events).to.deep.eq([
+      { port: 'can-usb-com_COM9', connection: 'connected', state: 'error-active', bitrate: 250000 },
+    ]);
+
+    adapter.state = 'bus-off';
+    adapter.emit('status', await adapter.status());
+    adapter.emit('status', await adapter.status()); // unchanged; not emitted again
+    expect(events.length).to.eq(2);
+    expect(events[1].state).to.eq('bus-off');
+
+    await can.close();
+    expect(events.length).to.eq(3);
+    expect(events[2]).to.deep.eq(CLOSED);
+  });
+
+  it('should normalize the status fields', async () => {
+    const adapter = new FakeAdapter([{ path: 'COM9' }]);
+    adapter.status = async () => ({ port: 'COM9', connection: 'disconnected', extra: 1 });
+    const can = makeBus(adapter, undefined);
+    await can.open('can-usb-com_COM9');
+
+    expect(await can.status()).to.deep.eq({
+      port: 'can-usb-com_COM9', connection: 'disconnected', state: null, bitrate: null,
+    });
   });
 });
 

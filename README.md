@@ -203,14 +203,17 @@ The following events and methods are wrapped or passed through by the `cs-canbus
 
 #### Events
  - `error`
+ - `status` (see [Status](#status))
  - `data`
  - `write`
  - `open`
  - `close`
 
+Listeners attached to this module stay attached when its port is closed and another (or the same) port is opened, unlike the adapter modules themselves, whose `close()` removes all listeners.
+
 #### Methods
  - `write(msg)`
- - `status()`
+ - `status()` (see [Status](#status))
  - `errorStats()` (see [Error Statistics](#error-statistics))
  - `isOpen()`
  - `isConnected()`
@@ -248,9 +251,24 @@ Adapter support:
 | Adapter type | Error statistics |
 |---|---|
 | `socketcan` | yes (`@csllc/cs-socketcan` with `errorStats()`); see its documentation for which drivers report what |
-| `pcan-usb` | not yet |
-| `canlib` | not yet |
-| `can-usb-com` | not yet |
+| `pcan-usb` | yes (`@csllc/cs-pcan-usb` with `errorStats()`); no `arbitrationLost`, and error frames need hardware and library support |
+| `canlib` | yes (`@csllc/cs-canlib` with `errorStats()`); no `arbitrationLost` or `errors.ack` |
+| `can-usb-com` | frame counters only (`since`, `txFrames`, `rxFrames`); the adapter doesn't report bus errors |
+
+### Status
+
+`status()` returns a Promise that resolves with the status of the open port, from its adapter module. A `status` event is emitted with the new status whenever it changes, including when a port is opened and closed. The object has the same fields whichever adapter is in use; a field whose value the adapter can't report is `null`.
+
+```js
+{
+  port: 'canlib_0',        // ID of the open port (as in list() and open()); null if closed
+  connection: 'connected', // 'closed', 'connected', or 'disconnected' (the adapter stopped responding, e.g. was unplugged, while the port was open)
+  state: 'error-active',   // 'error-active', 'error-warning', 'error-passive', 'bus-off', 'stopped', 'sleeping', or null
+  bitrate: 250000,         // bit rate in use, in bit/s
+}
+```
+
+If no port has been opened, or the adapter module doesn't support status reporting (an older version), the status is that of a closed port. A port that is `'disconnected'` stays that way until it is closed. The CAN-USB-COM doesn't report the state of its CAN controller, so with it `state` is always `null`. See each adapter module's documentation for details, including the `statusInterval` option, which sets how often the status is checked.
 
 ## API
 

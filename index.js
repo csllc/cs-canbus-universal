@@ -64,8 +64,23 @@ function defaultOptions() {
   };
 }
 
-// Events passed through from the selected adapter module
-const PASSTHROUGH_EVENTS = ['error', 'write', 'status'];
+// Events passed through from the selected adapter module. 'status' events are
+// passed through too, by _attach(), after being normalized.
+const PASSTHROUGH_EVENTS = ['error', 'write'];
+
+// Values of status().connection
+const CONNECTIONS = ['closed', 'connected', 'disconnected'];
+
+// Returns the status of a port that isn't open
+function closedStatus() {
+  return { port: null, connection: 'closed', state: null, bitrate: null };
+}
+
+// Returns whether two status objects are the same
+function sameStatus(a, b) {
+  return a.port === b.port && a.connection === b.connection &&
+    a.state === b.state && a.bitrate === b.bitrate;
+}
 
 // Returns the object that errorStats() resolves with when nothing is known.
 // Every adapter module's errorStats() resolves with an object with these
@@ -133,6 +148,7 @@ module.exports = class csCanbus extends Duplex {
     this.selectedModule = undefined; // First module to provide a successfully opened port
     this.selectedPort = undefined; // First port to be successfully opened
     this._listeners = [];
+    this._lastStatus = closedStatus(); // last status emitted
   }
 
   // Why each adapter module that could not be used was skipped, keyed by
@@ -209,6 +225,7 @@ module.exports = class csCanbus extends Duplex {
     const port = {
       type: id.slice(0, sep),
       path: id.slice(sep + 1),
+      id: id,
     };
     if (sep < 1 || port.path === '') {
       throw new Error('Invalid port ID: ' + id);
@@ -233,6 +250,7 @@ module.exports = class csCanbus extends Duplex {
   async close() {
     const module = this.selectedModule;
     this._detach();
+    this._emitStatus(closedStatus());
     // Emit close event on behalf of the module we're wrapping
     this.emit('close');
     if (module) {
@@ -244,8 +262,15 @@ module.exports = class csCanbus extends Duplex {
     return this.selectedModule.write(msg) || Promise.resolve();
   }
 
-  status() {
-    return this.selectedModule.status();
+  // Resolves with the status of the open port, from its adapter module. The
+  // port is identified by its ID (e.g. 'canlib_0'). If no port has been
+  // opened, the status is that of a closed port.
+  async status() {
+    const module = this.selectedModule;
+    if (!module || typeof module.status !== 'function') {
+      return closedStatus();
+    }
+    return this._normalizeStatus(await module.status());
   }
 
   // Resolves with the selected adapter module's bus error statistics. If no
@@ -316,8 +341,51 @@ module.exports = class csCanbus extends Duplex {
     for (const event of PASSTHROUGH_EVENTS) {
       this._listen(event, (arg) => { this.emit(event, arg); });
     }
+    this._listen('status', (status) => {
+      this._emitStatus(this._normalizeStatus(status));
+    });
 
     this.emit('open');
+
+    // The module reported the status of the newly opened port before its
+    // events were being passed through, so get it now
+    if (typeof module.status === 'function') {
+      Promise.resolve()
+        .then(() => module.status())
+        .then((status) => {
+          if (this.selectedModule === module) {
+            this._emitStatus(this._normalizeStatus(status));
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  // Copies the status fields from an adapter module's status, so that the
+  // result always has exactly those fields, and identifies the port by its ID
+  _normalizeStatus(status) {
+    const result = closedStatus();
+    if (!status || typeof status !== 'object' || !CONNECTIONS.includes(status.connection)) {
+      return result;
+    }
+    if (status.connection !== 'closed') {
+      result.port = this.selectedPort ? this.selectedPort.id : null;
+    }
+    result.connection = status.connection;
+    for (const key of ['state', 'bitrate']) {
+      if (status[key] !== undefined) {
+        result[key] = status[key];
+      }
+    }
+    return result;
+  }
+
+  // Emits a 'status' event, if the status changed
+  _emitStatus(status) {
+    if (!sameStatus(status, this._lastStatus)) {
+      this._lastStatus = status;
+      this.emit('status', Object.assign({}, status));
+    }
   }
 
   _listen(event, listener) {
