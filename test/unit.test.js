@@ -257,6 +257,82 @@ describe('Events', () => {
   });
 });
 
+describe('Error statistics', () => {
+  const KEYS = [
+    'since', 'txFrames', 'rxFrames', 'errorFrames', 'errorPercent', 'errors',
+    'arbitrationLost', 'overruns', 'busOff', 'state', 'txErrorCounter',
+    'rxErrorCounter',
+  ];
+  const ERROR_TYPES = ['bit', 'stuff', 'form', 'crc', 'ack', 'other'];
+
+  function expectAllNull(stats) {
+    expect(stats).to.have.all.keys(KEYS);
+    expect(stats.errors).to.have.all.keys(ERROR_TYPES);
+    for (const key of KEYS) {
+      if (key !== 'errors') {
+        expect(stats[key], key).to.eq(null);
+      }
+    }
+    for (const type of ERROR_TYPES) {
+      expect(stats.errors[type], type).to.eq(null);
+    }
+  }
+
+  it('should report all null fields if no port is open', async () => {
+    const can = makeBus(new FakeAdapter([{ path: 'COM9' }]), undefined);
+    expectAllNull(await can.errorStats());
+  });
+
+  it('should report all null fields if the adapter has no errorStats()', async () => {
+    const can = makeBus(new FakeAdapter([{ path: 'COM9' }]), undefined);
+    await can.open('can-usb-com_COM9');
+    expectAllNull(await can.errorStats());
+  });
+
+  it('should pass the adapter statistics through', async () => {
+    const since = new Date();
+    const stats = {
+      since, txFrames: 10, rxFrames: 20, errorFrames: 3, errorPercent: 3 / 33 * 100,
+      errors: { bit: 1, stuff: 1, form: 0, crc: 1, ack: 0, other: 0 },
+      arbitrationLost: 2, overruns: 0, busOff: 0, state: 'error-active',
+      txErrorCounter: 8, rxErrorCounter: 0,
+    };
+    const adapter = new FakeAdapter([{ path: 'COM9' }]);
+    adapter.errorStats = async () => stats;
+    const can = makeBus(adapter, undefined);
+    await can.open('can-usb-com_COM9');
+
+    expect(await can.errorStats()).to.deep.eq(stats);
+  });
+
+  it('should fill in missing fields with null and drop extra ones', async () => {
+    const adapter = new FakeAdapter([{ path: 'COM9' }]);
+    adapter.errorStats = async () => ({
+      txFrames: 5, errors: { stuff: 2 }, state: 'bus-off', extra: true,
+    });
+    const can = makeBus(adapter, undefined);
+    await can.open('can-usb-com_COM9');
+
+    const stats = await can.errorStats();
+    expect(stats).to.have.all.keys(KEYS);
+    expect(stats.errors).to.have.all.keys(ERROR_TYPES);
+    expect(stats.txFrames).to.eq(5);
+    expect(stats.rxFrames).to.eq(null);
+    expect(stats.errors.stuff).to.eq(2);
+    expect(stats.errors.bit).to.eq(null);
+    expect(stats.state).to.eq('bus-off');
+  });
+
+  it('should reject if the adapter rejects', async () => {
+    const adapter = new FakeAdapter([{ path: 'COM9' }]);
+    adapter.errorStats = async () => { throw new Error('read failed'); };
+    const can = makeBus(adapter, undefined);
+    await can.open('can-usb-com_COM9');
+
+    await expectReject(can.errorStats(), /read failed/);
+  });
+});
+
 async function expectReject(promise, pattern) {
   try {
     await promise;

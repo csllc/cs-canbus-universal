@@ -211,8 +211,46 @@ The following events and methods are wrapped or passed through by the `cs-canbus
 #### Methods
  - `write(msg)`
  - `status()`
+ - `errorStats()` (see [Error Statistics](#error-statistics))
  - `isOpen()`
  - `isConnected()`
+
+### Error Statistics
+
+`errorStats()` returns a Promise that resolves with bus error statistics from the adapter module of the open port. The object has the same fields whichever adapter is in use; a field whose value the adapter can't report is `null`. If no port has been opened, or the adapter module doesn't support error statistics yet, every field is `null`.
+
+```js
+{
+  since: Date,            // when counting started (when the port was opened)
+  txFrames: 0,            // data/remote frames sent
+  rxFrames: 0,            // data/remote frames received
+  errorFrames: 0,         // bus errors (error frames on the bus) reported by the adapter
+  errorPercent: 0,        // errorFrames / (txFrames + rxFrames + errorFrames) * 100; 0 if nothing was counted
+  errors: {               // errorFrames by type; these add up to errorFrames
+    bit: 0,               // bit errors, including bit0/bit1 errors
+    stuff: 0,             // stuffing errors
+    form: 0,              // form errors
+    crc: 0,               // CRC errors
+    ack: 0,               // acknowledgement errors (no ACK on transmission)
+    other: 0,             // bus errors of an unreported or other type
+  },
+  arbitrationLost: 0,     // transmissions that lost arbitration (normal on a busy bus; not an error frame)
+  overruns: 0,            // receive or transmit buffer overflows (frames were lost)
+  busOff: 0,              // times the controller went bus-off
+  state: 'error-active',  // 'error-active', 'error-warning', 'error-passive', 'bus-off', 'stopped', 'sleeping', or null
+  txErrorCounter: 0,      // transmit error counter (TEC)
+  rxErrorCounter: 0,      // receive error counter (REC)
+}
+```
+
+Adapter support:
+
+| Adapter type | Error statistics |
+|---|---|
+| `socketcan` | yes (`@csllc/cs-socketcan` with `errorStats()`); see its documentation for which drivers report what |
+| `pcan-usb` | not yet |
+| `canlib` | not yet |
+| `can-usb-com` | not yet |
 
 ## API
 

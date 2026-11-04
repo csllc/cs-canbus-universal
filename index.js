@@ -67,6 +67,48 @@ function defaultOptions() {
 // Events passed through from the selected adapter module
 const PASSTHROUGH_EVENTS = ['error', 'write', 'status'];
 
+// Returns the object that errorStats() resolves with when nothing is known.
+// Every adapter module's errorStats() resolves with an object with these
+// fields, using null for whatever it can't report.
+function emptyErrorStats() {
+  return {
+    since: null,
+    txFrames: null,
+    rxFrames: null,
+    errorFrames: null,
+    errorPercent: null,
+    errors: { bit: null, stuff: null, form: null, crc: null, ack: null, other: null },
+    arbitrationLost: null,
+    overruns: null,
+    busOff: null,
+    state: null,
+    txErrorCounter: null,
+    rxErrorCounter: null,
+  };
+}
+
+// Copies the fields of emptyErrorStats() from an adapter module's errorStats()
+// result, so that the result always has exactly those fields even if the
+// module is an older version or leaves some out
+function normalizeErrorStats(stats) {
+  const result = emptyErrorStats();
+  if (!stats || typeof stats !== 'object') {
+    return result;
+  }
+  for (const key of Object.keys(result)) {
+    if (key === 'errors') {
+      for (const type of Object.keys(result.errors)) {
+        if (stats.errors && stats.errors[type] !== undefined) {
+          result.errors[type] = stats.errors[type];
+        }
+      }
+    } else if (stats[key] !== undefined) {
+      result[key] = stats[key];
+    }
+  }
+  return result;
+}
+
 // Module
 module.exports = class csCanbus extends Duplex {
   constructor(options) {
@@ -204,6 +246,17 @@ module.exports = class csCanbus extends Duplex {
 
   status() {
     return this.selectedModule.status();
+  }
+
+  // Resolves with the selected adapter module's bus error statistics. If no
+  // port has been opened, or the module doesn't support errorStats(), every
+  // field is null.
+  async errorStats() {
+    const module = this.selectedModule;
+    if (!module || typeof module.errorStats !== 'function') {
+      return emptyErrorStats();
+    }
+    return normalizeErrorStats(await module.errorStats());
   }
 
   isOpen() {
